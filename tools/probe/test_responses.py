@@ -79,5 +79,31 @@ class PlayModeTests(unittest.TestCase):
         self.assertIsNone(play_mode(None))
 
 
+class OnLinkTests(unittest.TestCase):
+    """193.168.0.1 is a public address: only talk to it when our own address on
+    the route to it is in the same /24, i.e. we are on the camera's Wi-Fi."""
+
+    def test_same_subnet(self):
+        from netcheck import same_subnet
+
+        self.assertTrue(same_subnet("193.168.0.23", "193.168.0.1"))
+
+    def test_home_network_is_not_camera(self):
+        from netcheck import same_subnet
+
+        self.assertFalse(same_subnet("192.168.3.34", "193.168.0.1"))
+
+    def test_nearby_but_different_subnet(self):
+        from netcheck import same_subnet
+
+        self.assertFalse(same_subnet("193.168.1.5", "193.168.0.1"))
+
+    def test_bad_input_is_false(self):
+        from netcheck import same_subnet
+
+        for src in (None, "", "not-an-ip", "::1"):
+            self.assertFalse(same_subnet(src, "193.168.0.1"), src)
+
+
 if __name__ == "__main__":
     unittest.main()

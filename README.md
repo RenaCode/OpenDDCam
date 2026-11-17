@@ -17,6 +17,11 @@ are used only to describe compatibility.
 built and tested on real responses instead of guesses. It needs Python 3.9 or
 newer and only the standard library.
 
+The camera's address, 193.168.0.1, is a public internet address. The probe
+therefore refuses to start unless this computer's own address towards the camera
+is in the same /24, which means it is on the camera's Wi-Fi. Otherwise its
+requests would go to a stranger's server.
+
 It sends queries only, plus a normal login and logout like the stock app. It
 switches the camera to live view only if the camera reports another mode. It
 never changes settings, the clock, locks, recording or the memory card. The

@@ -35,6 +35,7 @@ import urllib.request
 import uuid
 
 from frames import FrameParser, nal_types
+from netcheck import same_subnet, source_address_for
 from responses import data_dict, file_names, parse_response, play_mode
 
 MAX_BODY = 2 * 1024 * 1024  # bytes read from any command response
@@ -266,7 +267,16 @@ def main() -> int:
     ap.add_argument("--stream-seconds", type=float, default=8)
     ap.add_argument("--no-stream", action="store_true")
     ap.add_argument("--http-port", type=int, default=80, help=argparse.SUPPRESS)
+    ap.add_argument("--allow-any-network", action="store_true",
+                    help="skip the check that the camera is on the local Wi-Fi (testing against a fake camera only)")
     a = ap.parse_args()
+
+    src = source_address_for(a.ip)
+    if not a.allow_any_network and not same_subnet(src, a.ip):
+        print(f"Refusing to run: this computer's address towards {a.ip} is {src}, not in the camera's network.\n"
+              "Join the camera's Wi-Fi (SSID volvo_... or ps_...) first. 193.168.0.1 is a public internet\n"
+              "address, so off the camera's Wi-Fi the login would go to a stranger's server.")
+        return 3
 
     if inside_git_worktree(a.out):
         print(f"Refusing --out {a.out}: it is inside a git repository and the results contain personal data.")
