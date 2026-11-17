@@ -1,0 +1,5 @@
+{"errcode":0,"data":{"num":2,"file":[
+ {"name":"20261117101000_B.MP4","starttime":"1795000000","endtime":"1795000060","size":120000000,"matchval":1},
+ {"name":"20261117101100_B.MP4","starttime":"1795000060","endtime":"1795000120","size":118000000,"matchval":"ALL"},
+ {"starttime":1,"endtime":2},
+ "garbage"]}}
