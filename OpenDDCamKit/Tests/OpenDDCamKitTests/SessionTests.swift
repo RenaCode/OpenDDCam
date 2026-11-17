@@ -109,9 +109,9 @@ import Testing
     }
 
     @Test func guardBlocksEverythingBeforeTransport() async {
-        let t = FakeTransport(loginAnswering { _, _ in Fixture.data("ok_empty") })
         let off = NetworkGuard(host: "193.168.0.1") { _ in "10.1.1.1" }
-        let session = makeSession(t, guard: off)
+        let t = FakeTransport(guard: off, loginAnswering { _, _ in Fixture.data("ok_empty") })
+        let session = makeSession(t)
         await #expect(throws: CameraError.notOnCameraNetwork(source: "10.1.1.1")) { try await session.login() }
         await #expect(throws: CameraError.notOnCameraNetwork(source: "10.1.1.1")) { _ = try await session.baseInfo() }
         await session.logout()
@@ -121,8 +121,8 @@ import Testing
     @Test func guardIsRecheckedOnEveryRequest() async throws {
         let onNet = LockedBox(true)
         let g = NetworkGuard(host: "193.168.0.1") { _ in onNet.value ? "193.168.0.9" : "172.16.0.1" }
-        let t = FakeTransport(loginAnswering { _, _ in Fixture.data("storage_info") })
-        let session = makeSession(t, guard: g)
+        let t = FakeTransport(guard: g, loginAnswering { _, _ in Fixture.data("storage_info") })
+        let session = makeSession(t)
         _ = try await session.storageInfo()
         let before = t.requests.count
         onNet.value = false
@@ -156,16 +156,6 @@ import Testing
         try await session.login()
         await session.logout()
         #expect(await session.sessionID == nil)
-    }
-
-    @Test func concurrentCallsShareOneLogin() async throws {
-        let t = FakeTransport(loginAnswering { _, _ in Fixture.data("storage_info") })
-        let session = makeSession(t)
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            for _ in 0..<5 { group.addTask { _ = try await session.storageInfo() } }
-            try await group.waitForAll()
-        }
-        #expect(t.commands.filter { $0 == "API_RequestSessionID" }.count == 1)
     }
 }
 

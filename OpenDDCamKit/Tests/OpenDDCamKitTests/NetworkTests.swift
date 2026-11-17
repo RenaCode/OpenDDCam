@@ -58,6 +58,12 @@ final class LockedBox<T: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var stored: T
     init(_ value: T) { stored = value }
+
+    func mutate(_ change: (inout T) -> Void) {
+        lock.lock()
+        defer { lock.unlock() }
+        change(&stored)
+    }
     var value: T {
         get { lock.lock(); defer { lock.unlock() }; return stored }
         set { lock.lock(); defer { lock.unlock() }; stored = newValue }

@@ -13,10 +13,13 @@ public struct CameraRequest: Sendable, Equatable {
         self.sessionID = sessionID
     }
 
-    /// 10 s, except 5 s for the mailbox poll.
+    /// Idle timeout: 10 s, except 5 s for the mailbox poll.
     public var timeout: TimeInterval { command == "API_GetMailboxData" ? 5 : 10 }
 
-    public func urlRequest(host: String) throws -> URLRequest {
+    /// Total time allowed for the whole exchange: 30 s, except 10 s for the mailbox poll.
+    public var resourceTimeout: TimeInterval { command == "API_GetMailboxData" ? 10 : 30 }
+
+    func urlRequest(host: String) throws -> URLRequest {
         var components = URLComponents()
         components.scheme = "http"
         components.host = host
@@ -35,13 +38,20 @@ public struct CameraRequest: Sendable, Equatable {
         request.setValue("SessionID=" + sessionID, forHTTPHeaderField: "Cookie")
         request.setValue("close", forHTTPHeaderField: "Connection")
         request.httpShouldHandleCookies = false
+        request.allowsCellularAccess = false
+        request.allowsExpensiveNetworkAccess = false
+        request.allowsConstrainedNetworkAccess = false
         request.httpBody = body
         return request
     }
 }
 
 /// Sends commands to the camera and returns the raw response body.
+///
+/// A transport owns the camera address and its `NetworkGuard`. There is one host, taken
+/// from the guard, so the address that is checked is the address that is contacted.
 public protocol CameraTransport: Sendable {
+    var networkGuard: NetworkGuard { get }
     func send(_ request: CameraRequest) async throws -> Data
 }
 
@@ -62,31 +72,81 @@ struct ResponseAccumulator {
     }
 }
 
+/// Redirects are never followed: a camera has no reason to send us elsewhere.
+private final class RefuseRedirects: NSObject, URLSessionTaskDelegate, Sendable {
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
+    }
+}
+
 /// `CameraTransport` over URLSession. Plain HTTP: an app must allow it for the camera's
 /// address (App Transport Security).
+///
+/// Every send first runs the `NetworkGuard`. The session refuses cellular, expensive and
+/// constrained networks, but URLSession cannot pin the connection to Wi-Fi, so a path
+/// change between the check and the send remains a small residual window; the guard runs
+/// again before every request.
 public struct URLSessionCameraTransport: CameraTransport {
-    public let host: String
+    public let networkGuard: NetworkGuard
     public let maxResponseBytes: Int
     private let session: URLSession
+    private let resourceTimeoutOverride: TimeInterval?
 
-    public init(host: String = "193.168.0.1", maxResponseBytes: Int = 8 * 1024 * 1024, session: URLSession? = nil) {
-        self.host = host
+    public var host: String { networkGuard.host }
+
+    public init(networkGuard: NetworkGuard = NetworkGuard(), maxResponseBytes: Int = 8 * 1024 * 1024) {
+        self.init(
+            networkGuard: networkGuard, maxResponseBytes: maxResponseBytes, protocolClasses: nil,
+            resourceTimeoutOverride: nil)
+    }
+
+    init(
+        networkGuard: NetworkGuard, maxResponseBytes: Int, protocolClasses: [AnyClass]?,
+        resourceTimeoutOverride: TimeInterval?
+    ) {
+        self.networkGuard = networkGuard
         self.maxResponseBytes = maxResponseBytes
-        if let session {
-            self.session = session
-        } else {
-            let config = URLSessionConfiguration.ephemeral
-            config.waitsForConnectivity = false
-            config.httpCookieStorage = nil
-            config.urlCache = nil
-            self.session = URLSession(configuration: config)
-        }
+        self.resourceTimeoutOverride = resourceTimeoutOverride
+        let config = Self.makeConfiguration()
+        if let protocolClasses { config.protocolClasses = protocolClasses }
+        self.session = URLSession(configuration: config)
+    }
+
+    static func makeConfiguration() -> URLSessionConfiguration {
+        let config = URLSessionConfiguration.ephemeral
+        config.waitsForConnectivity = false
+        config.allowsCellularAccess = false
+        config.allowsExpensiveNetworkAccess = false
+        config.allowsConstrainedNetworkAccess = false
+        config.timeoutIntervalForResource = 30
+        config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
+        config.urlCache = nil
+        return config
     }
 
     public func send(_ request: CameraRequest) async throws -> Data {
-        let urlRequest = try request.urlRequest(host: host)
+        try networkGuard.check()
+        let urlRequest = try request.urlRequest(host: networkGuard.host)
+        let deadline = resourceTimeoutOverride ?? request.resourceTimeout
+        return try await withThrowingTaskGroup(of: Data.self) { group in
+            group.addTask { try await self.fetch(urlRequest) }
+            group.addTask {
+                try await Task.sleep(for: .seconds(deadline))
+                throw CameraError.transport("timeout")
+            }
+            defer { group.cancelAll() }
+            guard let first = try await group.next() else { throw CameraError.invalidResponse }
+            return first
+        }
+    }
+
+    private func fetch(_ urlRequest: URLRequest) async throws -> Data {
         do {
-            let (bytes, response) = try await session.bytes(for: urlRequest)
+            let (bytes, response) = try await session.bytes(for: urlRequest, delegate: RefuseRedirects())
             guard let http = response as? HTTPURLResponse else { throw CameraError.invalidResponse }
             guard http.statusCode == 200 else { throw CameraError.httpStatus(http.statusCode) }
             var acc = ResponseAccumulator(limit: maxResponseBytes)
@@ -107,8 +167,10 @@ public struct URLSessionCameraTransport: CameraTransport {
             throw CancellationError()
         } catch let error as URLError where error.code == .cancelled {
             throw CancellationError()
+        } catch let error as URLError {
+            throw CameraError.transport("URLError \(error.code.rawValue)")
         } catch {
-            throw CameraError.transport(String(describing: (error as? URLError)?.code.rawValue ?? -1))
+            throw CameraError.transport("error")
         }
     }
 }

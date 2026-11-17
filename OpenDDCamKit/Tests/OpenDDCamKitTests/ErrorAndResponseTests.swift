@@ -90,12 +90,12 @@ import Testing
         let r = CameraResponse.parse(Data(#"{"errcode":0,"data":"hello"}"#.utf8))
         #expect(r.dataWasString == false)
         #expect(r.root?["data"] == .string("hello"))
-        #expect(r.payload["data"]?.string == "hello")
+        #expect(r.payload.isEmpty)
     }
 
-    @Test func emptyDataFallsBackToWholeObject() {
+    @Test func missingDataGivesEmptyPayload() {
         let r = CameraResponse.parse(Data(#"{"errcode":0,"num":3}"#.utf8))
-        #expect(r.payload["num"]?.int == 3)
+        #expect(r.payload.isEmpty)
     }
 
     @Test func errcodeOnly() {
@@ -133,6 +133,6 @@ import Testing
     @Test func nullData() {
         let r = CameraResponse.parse(Data(#"{"errcode":0,"data":null}"#.utf8))
         #expect(r.errcode == 0)
-        #expect(r.payload["errcode"]?.int == 0)
+        #expect(r.payload.isEmpty)
     }
 }

@@ -9,10 +9,10 @@ public struct CameraResponse: Sendable, Equatable {
     public let dataWasString: Bool
     public let isJSON: Bool
 
-    /// The reply's content: `data` when it is an object, else the whole root object, else empty.
+    /// The reply's content: `data` when it is an object, otherwise empty (also for a `data`
+    /// string that is not JSON, for null, or when `data` is missing).
     public var payload: [String: JSONValue] {
-        if let d = root?["data"]?.object { return d }
-        return root?.object ?? [:]
+        root?["data"]?.object ?? [:]
     }
 
     public static func parse(_ raw: Data) -> CameraResponse {

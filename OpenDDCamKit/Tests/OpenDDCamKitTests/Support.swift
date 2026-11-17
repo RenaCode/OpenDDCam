@@ -18,9 +18,14 @@ enum Fixture {
 final class FakeTransport: CameraTransport, @unchecked Sendable {
     private let lock = NSLock()
     private var log: [CameraRequest] = []
-    private let handler: @Sendable (CameraRequest, Int) throws -> Data
+    private let handler: @Sendable (CameraRequest, Int) async throws -> Data
+    let networkGuard: NetworkGuard
 
-    init(_ handler: @escaping @Sendable (CameraRequest, Int) throws -> Data) {
+    init(
+        guard networkGuard: NetworkGuard = onCameraNetwork,
+        _ handler: @escaping @Sendable (CameraRequest, Int) async throws -> Data
+    ) {
+        self.networkGuard = networkGuard
         self.handler = handler
     }
 
@@ -39,20 +44,20 @@ final class FakeTransport: CameraTransport, @unchecked Sendable {
             log.append(request)
             return log.count - 1
         }()
-        return try handler(request, index)
+        return try await handler(request, index)
     }
 }
 
 let onCameraNetwork = NetworkGuard(host: "193.168.0.1") { _ in "193.168.0.23" }
 
-func makeSession(_ transport: FakeTransport, guard netGuard: NetworkGuard = onCameraNetwork) -> CameraSession {
-    CameraSession(transport: transport, networkGuard: netGuard, uid: "randomImeiTEST")
+func makeSession(_ transport: FakeTransport) -> CameraSession {
+    CameraSession(transport: transport, uid: "randomImeiTEST")
 }
 
 /// Answers the login commands and delegates everything else.
 func loginAnswering(
-    sessionID: String = "S1", other: @escaping @Sendable (CameraRequest, Int) throws -> Data
-) -> @Sendable (CameraRequest, Int) throws -> Data {
+    sessionID: String = "S1", other: @escaping @Sendable (CameraRequest, Int) async throws -> Data
+) -> @Sendable (CameraRequest, Int) async throws -> Data {
     { request, index in
         switch request.command {
         case "API_RequestSessionID":
@@ -60,11 +65,51 @@ func loginAnswering(
         case "API_RequestCertificate":
             return Fixture.data("ok_empty")
         default:
-            return try other(request, index)
+            return try await other(request, index)
         }
     }
 }
 
 func json(_ data: Data?) -> JSONValue? {
     data.flatMap { JSONValue(data: $0) }
+}
+
+/// One-shot latch: `wait()` suspends until `release()` was called.
+actor Gate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func release() {
+        isOpen = true
+        let w = waiters
+        waiters = []
+        for c in w { c.resume() }
+    }
+}
+
+/// Suspends callers until `count` of them have arrived, then releases all.
+actor Barrier {
+    private let count: Int
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    init(count: Int) { self.count = count }
+
+    func arrive() async {
+        if waiting.count + 1 >= count {
+            let w = waiting
+            waiting = []
+            for c in w { c.resume() }
+            return
+        }
+        await withCheckedContinuation { waiting.append($0) }
+    }
+}
+
+func sessionData(_ id: String) -> Data {
+    Data(#"{"errcode":0,"data":{"acSessionId":"\#(id)"}}"#.utf8)
 }

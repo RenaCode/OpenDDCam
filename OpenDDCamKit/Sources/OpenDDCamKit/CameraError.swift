@@ -21,6 +21,10 @@ public enum CameraError: Error, Equatable, Sendable {
     case responseTooLarge
     /// Network-level failure (description only, so the error stays `Equatable`).
     case transport(String)
+    /// `logout()` was called; nothing is sent until `login()` is called again.
+    case loggedOut
+    /// The command is not on the read-only allowlist. Nothing was sent.
+    case commandNotAllowed(String)
     /// Our own address towards the camera is not in the camera's subnet. Nothing was sent.
     case notOnCameraNetwork(source: String?)
 
