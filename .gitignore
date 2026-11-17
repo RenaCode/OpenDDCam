@@ -1,0 +1,16 @@
+# Probe output contains personal data (serial number, login history, recording
+# times); the probe refuses to write inside a git repo, and these are a backstop.
+openddcam-probe/
+[0-9][0-9]_*_*.json
+summary.txt
+*.raw
+*.h264
+*.h265
+
+__pycache__/
+*.pyc
+.DS_Store
+build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+.swiftpm/
