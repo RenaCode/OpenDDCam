@@ -38,6 +38,14 @@ The output contains personal data: the serial number, the login history with
 phone names, recording dates and times, and possibly GPS. The probe refuses to
 write it inside a git repository. Do not publish it before you scrub it.
 
+## OpenDDCamKit
+
+`OpenDDCamKit/` is a Swift package (iOS 17, macOS 14, Swift 6, no dependencies) with the
+camera client core: tolerant response parsing, session login with one automatic
+re-login, read-only queries, a network guard (see the probe section), and a parser for
+the live TCP stream with H.264/H.265 NAL helpers. Fixtures are reconstructed, not
+recorded. Run the tests with `cd OpenDDCamKit && swift test`.
+
 ## License
 
 MIT, see [LICENSE](LICENSE).

@@ -1,0 +1,5 @@
+{"errcode":0,"data":{"msg":[{"msgid":"MSG_PlaybackListUpdate","data":"{\"action\":\"add\",\"name\":\"20261117101300_B.MP4\",\"starttime\":\"1795000380\",\"endtime\":\"1795000440\",\"matchval\":1}"},
+ {"msgid":"MSG_CameraPreview","data":{"cameraPreview":"front"}},
+ {"msgid":"MSG_PowerDown"},
+ {"data":"{}"},
+ "junk"]}}
